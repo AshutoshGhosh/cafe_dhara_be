@@ -27,6 +27,7 @@ Stack: Node.js + Express + MongoDB (Mongoose) + TypeScript.
 - Always index frequently-queried fields (status, createdAt, etc.).
 - Always use soft deletes (`deletedAt`) where the model has that field.
 - Always wrap async route handlers in `asyncHandler` so errors reach the global handler.
+- Always log every change in `CHANGELOG.md` (under `## [Unreleased]`, following Keep a Changelog + Conventional Commits) — no code change ships without a changelog entry.
 
 ## Architecture
 - `src/config` — env loader (zod-validated) + Mongoose connection.

@@ -13,15 +13,15 @@ export const placeOrderSchema = z.object({
     .array(
       z.object({
         menuItemId: objectId,
-        variantId: objectId.optional(),
-        addOnIds: z.array(objectId).max(50).optional(),
+        variantId: objectId.nullish(),
+        addOnIds: z.array(objectId).max(50).nullish(),
         quantity: z.number().int().min(1).max(99),
-        notes: z.string().trim().max(500).optional(),
+        notes: z.string().trim().max(500).nullish(),
       }),
     )
     .min(1, 'At least one item is required')
     .max(50, 'Too many items'),
-  notes: z.string().trim().max(1000).optional(),
+  notes: z.string().trim().max(1000).nullish(),
 });
 
 /** GET /api/orders — staff listing filters (query string). */

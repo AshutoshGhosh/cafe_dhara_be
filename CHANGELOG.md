@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
+### fix: order placement rejected `null` optional fields (400)
+
+- **Orders validation** (`orders.validation.ts`): optional item fields
+  (`variantId`, `addOnIds`, `notes`) and top-level `notes` changed from
+  `.optional()` to `.nullish()` so clients may send explicit `null` for
+  unselected options. Previously a `variantId: null` payload failed Zod
+  validation with `VALIDATION_ERROR` (400). Service logic already treated
+  `null`/`undefined` identically, so no service change was needed.
+
+### chore: realtime (Socket.IO) audit + diagnostics
+
+- Audited the sockets layer end-to-end against the frontend contract
+  (`staff` room ← `order:new`/`order:updated`; `session:<id>` room ←
+  `order:updated`; handshake `auth.token`/`auth.sessionId`). Event names,
+  room names, payload shape (the order object itself), and CORS
+  (`http://localhost:3001`, `credentials: true`) all verified correct — no
+  wiring mismatch found.
+- **`sockets/index.ts`**: made transports explicit (`['websocket','polling']`)
+  and added **temporary** `[socket-debug]` logging (marked "remove after
+  diagnosing realtime") — CORS allow-list at startup, rooms each socket joins
+  on connect, and event name + target rooms + per-room client counts inside
+  `emitOrderNew`/`emitOrderUpdated`.
+
 ## [0.1.0] - 2026-07-12
 
 ### feat: foundation — scaffold, models, auth + RBAC

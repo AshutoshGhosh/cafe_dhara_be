@@ -43,6 +43,9 @@ function serialize(order: IOrder): Record<string, unknown> {
   return order.toObject({ versionKey: false });
 }
 
+/** Populate the table ref so clients receive `{ number, name }` instead of an id. */
+const TABLE_FIELDS = 'number name';
+
 /**
  * Close the customer session once every non-cancelled order on it is paid, so a
  * settled table can't keep ordering on the same session.
@@ -153,6 +156,7 @@ export const orderService = {
       placedAt: new Date(),
     });
 
+    await order.populate('table', TABLE_FIELDS);
     const dto = serialize(order);
     emitOrderNew(dto);
     return dto;
@@ -169,7 +173,10 @@ export const orderService = {
       if (filters.from) (query.createdAt as Record<string, Date>).$gte = filters.from;
       if (filters.to) (query.createdAt as Record<string, Date>).$lte = filters.to;
     }
-    const orders = await Order.find(query).sort({ createdAt: -1 }).limit(200);
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate('table', TABLE_FIELDS);
     return orders.map(serialize);
   },
 
@@ -181,7 +188,7 @@ export const orderService = {
     id: string,
     opts: { isStaff: boolean; sessionId?: string },
   ): Promise<Record<string, unknown>> {
-    const order = await Order.findById(id);
+    const order = await Order.findById(id).populate('table', TABLE_FIELDS);
     if (!order) {
       throw AppError.notFound('Order not found', 'ORDER_NOT_FOUND');
     }
@@ -228,6 +235,7 @@ export const orderService = {
     }
     await order.save();
 
+    await order.populate('table', TABLE_FIELDS);
     const dto = serialize(order);
     emitOrderUpdated(dto, order.session ? String(order.session) : null);
     return dto;
@@ -251,6 +259,7 @@ export const orderService = {
       await closeSessionIfFullyPaid(order.session);
     }
 
+    await order.populate('table', TABLE_FIELDS);
     const dto = serialize(order);
     emitOrderUpdated(dto, order.session ? String(order.session) : null);
     return dto;

@@ -17,7 +17,7 @@ const sessionSchema = new Schema<ISession>(
     table: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
     deviceFingerprint: { type: String },
     isActive: { type: Boolean, default: true, index: true },
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
