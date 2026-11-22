@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and
 
 ## [Unreleased]
 
+### feat: real-time bill request event propagation
+
+- **Socket Layer** (`src/sockets/index.ts`):
+  - Added socket handler for incoming customer `bill:request` events, forwarding table bill signals to the authenticated `staff` room.
+  - Exported `emitBillRequest` utility for server-side bill notifications.
+
+
+### feat: expose dual root and api health check endpoints
+
+- **Server Index** (`src/index.ts`):
+  - Mounted unversioned health handler on both `GET /health` and `GET /api/health` so frontend pingers, external up-time monitors, and reverse proxies can probe server vitality without rate limits.
+
+
+### feat: permit KITCHEN role to transition PLACED orders to ACCEPTED
+
+- **Orders Service** (`src/modules/orders/orders.service.ts`):
+  - Added `OrderStatus.ACCEPTED` to `KITCHEN_ALLOWED` (`[ACCEPTED, PREPARING, READY]`).
+  - Ensures KDS auto-accept and kitchen staff "Accept Ticket" actions do not get blocked by role transition guards when logged in as kitchen station accounts.
+
+
+### test: unit test suites for core utilities, token cryptography & validation
+
+- Added native Node 22 test runner script to `package.json` (`npm test` via `node --import tsx --test 'src/**/*.test.ts'`).
+- `src/utils/duration.test.ts`: 7 unit tests covering seconds, minutes, hours, days parsing, and `fromNow` date calculations.
+- `src/utils/password.test.ts`: bcrypt password hashing, matching, and wrong password rejection.
+- `src/common/AppError.test.ts`: operational HTTP error factory tests (400, 401, 403, 404, 409, 500).
+- `src/modules/qr/qr.token.test.ts`: cryptographic HMAC-SHA256 signature generation, constant-time verification, and tampered token rejection.
+- `src/modules/tables/tables.validation.test.ts`: MongoDB ObjectId schema, table creation/update payload validation, and numeric coercion.
+- All 25 backend tests passing with 0 errors.
+
 ### fix: order placement rejected `null` optional fields (400)
 
 - **Orders validation** (`orders.validation.ts`): optional item fields

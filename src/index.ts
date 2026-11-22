@@ -30,10 +30,12 @@ export function createApp(): express.Express {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
-  // Health check (unversioned, no rate limit).
-  app.get('/api/health', (_req: Request, res: Response) => {
+  // Health check (unversioned, no rate limit) - available at both /health and /api/health.
+  const handleHealth = (_req: Request, res: Response) => {
     sendOk(res, { status: 'ok', service: 'cafe-dhara-be', time: new Date().toISOString() });
-  });
+  };
+  app.get('/health', handleHealth);
+  app.get('/api/health', handleHealth);
 
   // Rate-limited feature API.
   app.use('/api', apiLimiter, apiRouter);

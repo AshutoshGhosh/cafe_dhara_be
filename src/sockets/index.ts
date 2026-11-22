@@ -68,6 +68,11 @@ function registerHandlers(socket: Socket): void {
     }
   });
 
+  // Customer bill request forwarded to staff room.
+  socket.on('bill:request', (data: unknown) => {
+    io?.to(STAFF_ROOM).emit('bill:request', data);
+  });
+
   socket.on('disconnect', () => {
     // eslint-disable-next-line no-console
     console.log(`[socket] client disconnected: ${socket.id}`);
@@ -139,4 +144,9 @@ export function emitOrderUpdated(order: unknown, sessionId?: string | null): voi
   if (sessionId) {
     io.to(sessionRoom(sessionId)).emit('order:updated', order);
   }
+}
+
+export function emitBillRequest(data: { tableNumber: number; sessionId?: string }): void {
+  if (!io) return;
+  io.to(STAFF_ROOM).emit('bill:request', data);
 }

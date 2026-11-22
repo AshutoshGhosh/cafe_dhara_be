@@ -35,7 +35,17 @@ export const billsService = {
 
     const orders = await Order.find(query).sort({ createdAt: 1 });
     if (orders.length === 0) {
-      throw AppError.badRequest('No billable orders found for this table', 'NO_ORDERS');
+      throw AppError.badRequest('No billable orders found', 'NO_ORDERS');
+    }
+
+    // Idempotency: If an invoice already exists for this session or these exact orders, return it
+    if (input.sessionId) {
+      const existing = await Invoice.findOne({ session: new Types.ObjectId(input.sessionId) }).sort({ createdAt: -1 });
+      if (existing) return existing;
+    } else if (input.orderIds && input.orderIds.length > 0) {
+      const orderOids = input.orderIds.map((id) => new Types.ObjectId(id));
+      const existing = await Invoice.findOne({ orders: { $all: orderOids } }).sort({ createdAt: -1 });
+      if (existing) return existing;
     }
 
     // 2) Snapshot line items (effective per-unit price keeps unit*qty === lineTotal).

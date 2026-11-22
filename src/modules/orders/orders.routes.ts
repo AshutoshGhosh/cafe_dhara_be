@@ -12,6 +12,14 @@ const router = Router();
 router.post('/', asyncHandler(orderController.place));
 
 // --- Staff -------------------------------------------------------------------
+// Counter POS / verbal self-ordering: placed by authenticated staff member.
+router.post(
+  '/staff',
+  authenticate,
+  authorize(Role.OWNER, Role.MANAGER, Role.WAITER, Role.CASHIER, Role.KITCHEN, Role.STAFF),
+  asyncHandler(orderController.placeStaff),
+);
+
 // List orders with optional status + date-range filters.
 router.get(
   '/',

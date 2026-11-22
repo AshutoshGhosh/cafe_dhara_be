@@ -50,3 +50,27 @@ export const sessionQuerySchema = z.object({
 export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
 export type ListOrdersInput = z.infer<typeof listOrdersSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
+
+/** POST /api/orders/staff — staff counter POS / self-ordering placement. */
+export const placeStaffOrderSchema = z.object({
+  tableId: objectId.nullish(),
+  orderType: z.enum(['DINE_IN', 'TAKEAWAY']).optional(),
+  customerName: z.string().trim().max(100).nullish(),
+  customerPhone: z.string().trim().max(20).nullish(),
+  isPaid: z.boolean().optional(),
+  notes: z.string().trim().max(1000).nullish(),
+  items: z
+    .array(
+      z.object({
+        menuItemId: objectId,
+        variantId: objectId.nullish(),
+        addOnIds: z.array(objectId).max(50).nullish(),
+        quantity: z.number().int().min(1).max(99),
+        notes: z.string().trim().max(500).nullish(),
+      }),
+    )
+    .min(1, 'At least one item is required')
+    .max(50, 'Too many items'),
+});
+
+export type PlaceStaffOrderInput = z.infer<typeof placeStaffOrderSchema>;

@@ -1,10 +1,10 @@
 import { Types, type FilterQuery } from 'mongoose';
-import { Order, MenuItem, Session } from '../../models';
+import { Order, MenuItem, Session, Table } from '../../models';
 import type { IOrder, IMenuItem } from '../../models';
 import { OrderStatus, Role } from '../../models/enums';
 import { AppError } from '../../common/AppError';
 import { emitOrderNew, emitOrderUpdated } from '../../sockets';
-import type { PlaceOrderInput, ListOrdersInput } from './orders.validation';
+import type { PlaceOrderInput, ListOrdersInput, PlaceStaffOrderInput } from './orders.validation';
 
 /**
  * Allowed status transitions. CANCELLED is reachable from any non-terminal
@@ -21,7 +21,11 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 };
 
 /** Statuses the KITCHEN role is permitted to set. */
-const KITCHEN_ALLOWED: OrderStatus[] = [OrderStatus.PREPARING, OrderStatus.READY];
+const KITCHEN_ALLOWED: OrderStatus[] = [
+  OrderStatus.ACCEPTED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY,
+];
 
 /** Maps a target status to the timestamp field to stamp. */
 const STATUS_TIMESTAMP: Partial<Record<OrderStatus, keyof IOrder>> = {
@@ -61,6 +65,81 @@ async function closeSessionIfFullyPaid(sessionId: Types.ObjectId): Promise<void>
   }
 }
 
+async function buildOrderLines(lines: PlaceOrderInput['items']): Promise<{
+  items: any[];
+  subtotal: number;
+  tax: number;
+  discount: number;
+  total: number;
+}> {
+  // Load all referenced menu items in one query.
+  const menuItemIds = [...new Set(lines.map((i) => i.menuItemId))];
+  const menuItems = await MenuItem.find({
+    _id: { $in: menuItemIds },
+    deletedAt: null,
+  });
+  const byId = new Map<string, IMenuItem>(menuItems.map((m) => [String(m._id), m]));
+
+  // Build snapshotted order items with server-computed prices.
+  const items = lines.map((line) => {
+    const menuItem = byId.get(line.menuItemId);
+    if (!menuItem) {
+      throw AppError.badRequest(`Menu item ${line.menuItemId} is unavailable`, 'ITEM_UNAVAILABLE');
+    }
+    if (!menuItem.isAvailable) {
+      throw AppError.badRequest(`"${menuItem.name}" is currently unavailable`, 'ITEM_UNAVAILABLE');
+    }
+
+    const basePrice = menuItem.discountPrice ?? menuItem.price;
+
+    // Variant (optional).
+    let variantId: Types.ObjectId | undefined;
+    let variantName: string | undefined;
+    let variantAdjustment = 0;
+    if (line.variantId) {
+      const variant = menuItem.variants.id(line.variantId);
+      if (!variant || !variant.isAvailable) {
+        throw AppError.badRequest(`Selected variant is unavailable`, 'VARIANT_UNAVAILABLE');
+      }
+      variantId = variant._id;
+      variantName = variant.name;
+      variantAdjustment = variant.priceAdjustment;
+    }
+
+    // Add-ons (optional).
+    const addOns = (line.addOnIds ?? []).map((addOnId) => {
+      const addOn = menuItem.addOns.id(addOnId);
+      if (!addOn || !addOn.isAvailable) {
+        throw AppError.badRequest(`Selected add-on is unavailable`, 'ADDON_UNAVAILABLE');
+      }
+      return { addOn: addOn._id, name: addOn.name, price: addOn.price };
+    });
+
+    const addOnTotal = addOns.reduce((sum, a) => sum + a.price, 0);
+    const unitPrice = basePrice + variantAdjustment;
+    const totalPrice = (unitPrice + addOnTotal) * line.quantity;
+
+    return {
+      menuItem: menuItem._id,
+      variant: variantId,
+      name: menuItem.name,
+      variantName,
+      quantity: line.quantity,
+      unitPrice,
+      totalPrice,
+      notes: line.notes,
+      addOns,
+    };
+  });
+
+  const subtotal = items.reduce((sum, i) => sum + i.totalPrice, 0);
+  const tax = 0;
+  const discount = 0;
+  const total = subtotal + tax - discount;
+
+  return { items, subtotal, tax, discount, total };
+}
+
 export const orderService = {
   /**
    * Place a customer order. Validates the session directly, snapshots menu-item
@@ -76,71 +155,7 @@ export const orderService = {
       throw AppError.badRequest('Session is not active', 'SESSION_INACTIVE');
     }
 
-    // 2) Load all referenced menu items in one query.
-    const menuItemIds = [...new Set(input.items.map((i) => i.menuItemId))];
-    const menuItems = await MenuItem.find({
-      _id: { $in: menuItemIds },
-      deletedAt: null,
-    });
-    const byId = new Map<string, IMenuItem>(menuItems.map((m) => [String(m._id), m]));
-
-    // 3) Build snapshotted order items with server-computed prices.
-    const items = input.items.map((line) => {
-      const menuItem = byId.get(line.menuItemId);
-      if (!menuItem) {
-        throw AppError.badRequest(`Menu item ${line.menuItemId} is unavailable`, 'ITEM_UNAVAILABLE');
-      }
-      if (!menuItem.isAvailable) {
-        throw AppError.badRequest(`"${menuItem.name}" is currently unavailable`, 'ITEM_UNAVAILABLE');
-      }
-
-      const basePrice = menuItem.discountPrice ?? menuItem.price;
-
-      // Variant (optional).
-      let variantId: Types.ObjectId | undefined;
-      let variantName: string | undefined;
-      let variantAdjustment = 0;
-      if (line.variantId) {
-        const variant = menuItem.variants.id(line.variantId);
-        if (!variant || !variant.isAvailable) {
-          throw AppError.badRequest(`Selected variant is unavailable`, 'VARIANT_UNAVAILABLE');
-        }
-        variantId = variant._id;
-        variantName = variant.name;
-        variantAdjustment = variant.priceAdjustment;
-      }
-
-      // Add-ons (optional).
-      const addOns = (line.addOnIds ?? []).map((addOnId) => {
-        const addOn = menuItem.addOns.id(addOnId);
-        if (!addOn || !addOn.isAvailable) {
-          throw AppError.badRequest(`Selected add-on is unavailable`, 'ADDON_UNAVAILABLE');
-        }
-        return { addOn: addOn._id, name: addOn.name, price: addOn.price };
-      });
-
-      const addOnTotal = addOns.reduce((sum, a) => sum + a.price, 0);
-      const unitPrice = basePrice + variantAdjustment;
-      const totalPrice = (unitPrice + addOnTotal) * line.quantity;
-
-      return {
-        menuItem: menuItem._id,
-        variant: variantId,
-        name: menuItem.name,
-        variantName,
-        quantity: line.quantity,
-        unitPrice,
-        totalPrice,
-        notes: line.notes,
-        addOns,
-      };
-    });
-
-    // 4) Compute order totals (no tax/discount configured for this cafe).
-    const subtotal = items.reduce((sum, i) => sum + i.totalPrice, 0);
-    const tax = 0;
-    const discount = 0;
-    const total = subtotal + tax - discount;
+    const { items, subtotal, tax, discount, total } = await buildOrderLines(input.items);
 
     const order = await Order.create({
       table: session.table,
@@ -157,6 +172,69 @@ export const orderService = {
     });
 
     await order.populate('table', TABLE_FIELDS);
+    const dto = serialize(order);
+    emitOrderNew(dto);
+    return dto;
+  },
+
+  /**
+   * Place an order directly via Staff Counter / POS Self-Ordering terminal.
+   * Confirmed verbally at counter: initial status is immediately ACCEPTED.
+   * Validates active table if dine-in, or sets orderType: TAKEAWAY.
+   * Attaches logged-in staff member attribution (id, name, role).
+   */
+  async placeOrderByStaff(
+    input: PlaceStaffOrderInput,
+    user: { id: string; role: Role; firstName?: string; lastName?: string },
+  ): Promise<Record<string, unknown>> {
+    let tableRef: Types.ObjectId | undefined;
+    let orderType: 'DINE_IN' | 'TAKEAWAY' = input.orderType ?? (input.tableId ? 'DINE_IN' : 'TAKEAWAY');
+
+    if (input.tableId) {
+      const table = await Table.findOne({ _id: input.tableId, deletedAt: null });
+      if (!table) {
+        throw AppError.notFound('Table not found', 'TABLE_NOT_FOUND');
+      }
+      if (!table.isActive) {
+        throw AppError.badRequest('Selected table is not active', 'TABLE_INACTIVE');
+      }
+      tableRef = table._id;
+      orderType = 'DINE_IN';
+    }
+
+    const { items, subtotal, tax, discount, total } = await buildOrderLines(input.items);
+
+    const staffName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Staff Member';
+    const staffAttribution = {
+      id: new Types.ObjectId(user.id),
+      name: staffName,
+      role: user.role,
+    };
+
+    const now = new Date();
+    const order = await Order.create({
+      table: tableRef,
+      orderType,
+      staffAttribution,
+      customerName: input.customerName || undefined,
+      customerPhone: input.customerPhone || undefined,
+      orderNumber: await nextOrderNumber(),
+      status: OrderStatus.ACCEPTED,
+      acceptedAt: now,
+      isPaid: Boolean(input.isPaid),
+      paidAt: input.isPaid ? now : undefined,
+      items,
+      subtotal,
+      tax,
+      discount,
+      total,
+      notes: input.notes,
+      placedAt: now,
+    });
+
+    if (tableRef) {
+      await order.populate('table', TABLE_FIELDS);
+    }
     const dto = serialize(order);
     emitOrderNew(dto);
     return dto;

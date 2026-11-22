@@ -28,9 +28,19 @@ export interface IOrderItem {
   addOns: Types.DocumentArray<IOrderItemAddOn>;
 }
 
+export interface IStaffAttribution {
+  id: Types.ObjectId;
+  name: string;
+  role: string;
+}
+
 export interface IOrder extends Document {
-  table: Types.ObjectId;
+  table?: Types.ObjectId;
   session?: Types.ObjectId;
+  orderType: 'DINE_IN' | 'TAKEAWAY';
+  staffAttribution?: IStaffAttribution;
+  customerName?: string;
+  customerPhone?: string;
   orderNumber: number;
   status: OrderStatus;
   items: Types.DocumentArray<IOrderItem>;
@@ -78,10 +88,28 @@ const orderItemSchema = new Schema<IOrderItem>(
   { _id: true },
 );
 
+const staffAttributionSchema = new Schema<IStaffAttribution>(
+  {
+    id: { type: Schema.Types.ObjectId, ref: 'User' },
+    name: { type: String, required: true },
+    role: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema<IOrder>(
   {
-    table: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
+    table: { type: Schema.Types.ObjectId, ref: 'Table', required: false, index: true },
     session: { type: Schema.Types.ObjectId, ref: 'Session', index: true },
+    orderType: {
+      type: String,
+      enum: ['DINE_IN', 'TAKEAWAY'],
+      default: 'DINE_IN',
+      index: true,
+    },
+    staffAttribution: { type: staffAttributionSchema },
+    customerName: { type: String },
+    customerPhone: { type: String },
     orderNumber: { type: Number, required: true, index: true },
     status: {
       type: String,

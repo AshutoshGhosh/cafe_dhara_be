@@ -4,6 +4,7 @@ import { verifyAccessToken } from '../../utils/jwt';
 import { orderService } from './orders.service';
 import {
   placeOrderSchema,
+  placeStaffOrderSchema,
   listOrdersSchema,
   updateStatusSchema,
   idParamSchema,
@@ -30,6 +31,13 @@ export const orderController = {
   async place(req: Request, res: Response): Promise<Response> {
     const input = placeOrderSchema.parse(req.body);
     const order = await orderService.placeOrder(input);
+    return sendOk(res, { order }, 201);
+  },
+
+  // POST /api/orders/staff  (staff counter POS / verbal self-ordering)
+  async placeStaff(req: Request, res: Response): Promise<Response> {
+    const input = placeStaffOrderSchema.parse(req.body);
+    const order = await orderService.placeOrderByStaff(input, req.user!);
     return sendOk(res, { order }, 201);
   },
 
